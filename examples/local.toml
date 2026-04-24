@@ -1,0 +1,15 @@
+[identity]
+# Leave unset to generate a fresh keypair on first boot. Set to a path to
+# persist and reload.
+# keypair_path = "./kited-data/keypair"
+
+[network]
+listen_addr = "/ip4/0.0.0.0/tcp/4190"
+enable_mdns = true
+
+[storage]
+data_dir = "./kited-data"
+
+[metrics]
+enabled = true
+addr = "127.0.0.1:9191"

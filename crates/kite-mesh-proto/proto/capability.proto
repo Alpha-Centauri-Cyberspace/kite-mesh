@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package kite.mesh.v1;
+
+// A capability exposed by an agent. See MESH_PRD.md §5.
+message CapabilityCard {
+  string capability_id = 1;
+  string agent_id = 2;
+  string agent_name = 3;
+  string agent_version = 4;
+
+  repeated string ontologies = 5;
+  repeated Tool tools = 6;
+
+  CapabilityFacets facets = 7;
+
+  string description = 8;
+  EmbeddingDescriptor embedding = 9;
+
+  PricingModel pricing = 10;
+  AgentStatus status = 11;
+  uint64 last_seen_ns = 12;
+  uint64 expires_at_ns = 13;
+
+  // Deterministic blake3 over the canonicalized facets. Reproducible.
+  bytes facet_fingerprint = 14;
+  repeated TrustSignature endorsements = 15;
+
+  bytes signature = 16;
+
+  // Interop facets — optional, not included in facet_fingerprint.
+  repeated McpServerDescriptor mcp_servers = 17;
+  string a2a_agent_card_url = 18;
+
+  // Publisher's libp2p PublicKey (protobuf-encoded). Used for signature
+  // verification without an out-of-band key lookup. MUST match the key that
+  // derives `agent_id` (the PeerId).
+  bytes public_key = 19;
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+}
+
+message CapabilityFacets {
+  repeated string tools = 1;
+  repeated string ontologies = 2;
+  string sandbox_level = 3;       // none | process | container | vm
+  string network_access = 4;      // offline | egress-limited | full
+  string gpu_class = 5;           // none | consumer | datacenter
+  string privacy_tier = 6;        // public | trusted | confidential
+  string region = 7;              // local | same-lan | same-org | <geo>
+  string pricing_band = 8;        // free | low | medium | premium
+  string trust_tier = 9;          // local | psk | endorsed | public
+  AgentStatus status = 10;
+}
+
+message EmbeddingDescriptor {
+  string model_id = 1;
+  uint32 dimension = 2;
+  repeated float vector = 3;
+  bool normalized = 4;
+}
+
+message PricingModel {
+  string band = 1;
+}
+
+enum AgentStatus {
+  AGENT_STATUS_UNSPECIFIED = 0;
+  AGENT_STATUS_AVAILABLE = 1;
+  AGENT_STATUS_BUSY = 2;
+  AGENT_STATUS_DRAINING = 3;
+  AGENT_STATUS_OFFLINE = 4;
+}
+
+message TrustSignature {
+  string endorser_peer_id = 1;
+  bytes signature = 2;
+  uint64 issued_at_ns = 3;
+}
+
+message McpServerDescriptor {
+  string name = 1;
+  string transport = 2;
+  string endpoint = 3;
+  repeated string tools = 4;
+  repeated string resources = 5;
+  string auth_scheme = 6;
+}
