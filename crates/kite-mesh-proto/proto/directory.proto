@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package kite.mesh.v1;
+
+// Compact record stored in the Kademlia DHT under
+// K_i = blake3(proto_version || facet_fingerprint || model_id || i || h_i).
+// The full CapabilityCard is fetched separately via request-response.
+message DirectoryRecord {
+  string capability_id = 1;
+  string agent_id = 2;
+  string peer_id = 3;
+  bytes facet_fingerprint = 4;
+  string model_id = 5;
+  uint32 table_id = 6;
+  bytes hash_code = 7;
+  string status = 8;
+  uint64 ttl_ns = 9;
+  bytes signature = 10;
+  uint32 protocol_version = 11;
+  bytes publisher_public_key = 12;
+}
+
+// Lightweight advert broadcast over GossipSub (Phase 1). Not used in the
+// walking skeleton — kept in the schema so Phase 1 does not reschema.
+message IntentAdvert {
+  string intent_id = 1;
+  string requester_peer_id = 2;
+  bytes facet_slice_fingerprint = 3;
+  string model_id = 4;
+  repeated bytes lsh_signatures = 5;
+  uint64 deadline_ns = 6;
+  bytes signature = 7;
+}

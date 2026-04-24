@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package kite.mesh.v1;
+
+import "capability.proto";
+import "directory.proto";
+import "receipt.proto";
+
+// ACL envelope — the common wire format for all mesh messages.
+// See MESH_PRD.md §5.
+message AclMessage {
+  string sender_id = 1;
+  bytes signature = 2;
+  uint64 timestamp_ns = 3;
+  string message_id = 4;
+
+  Performative performative = 5;
+  string ontology = 6;
+  string conversation_id = 7;
+  string in_reply_to = 8;
+
+  oneof payload {
+    Intent intent = 10;
+    IntentAdvert advert = 11;
+    Proposal proposal = 12;
+    Agreement agreement = 13;
+    TaskResult result = 14;
+    StreamFrame stream = 15;
+    CapabilityCard capability = 16;
+    DirectoryRecord directory_record = 17;
+    Receipt receipt = 18;
+  }
+
+  TrustContext trust = 20;
+
+  bytes sender_public_key = 22;
+}
+
+enum Performative {
+  PERFORMATIVE_UNSPECIFIED = 0;
+  PERFORMATIVE_REQUEST = 1;
+  PERFORMATIVE_PROPOSE = 2;
+  PERFORMATIVE_AGREE = 3;
+  PERFORMATIVE_REFUSE = 4;
+  PERFORMATIVE_INFORM = 5;
+  PERFORMATIVE_FAILURE = 6;
+  PERFORMATIVE_CANCEL = 7;
+  PERFORMATIVE_SUBSCRIBE = 8;
+}
+
+message TrustContext {
+  string tier = 1;
+  repeated string endorser_peer_ids = 2;
+}
