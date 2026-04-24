@@ -1,5 +1,9 @@
 # Kite Agent Mesh — Product Requirements Document
 
+> This is the **north-star PRD** for the full Kite Mesh platform. For the first-phase build plan that we're executing on right now, see [`docs/walking_skeleton.md`](./docs/walking_skeleton.md).
+>
+> *Last updated: 2026-04-23.*
+
 > **Status**: Draft
 > **Scope**: Open-source mesh protocol, self-hostable daemon, SDK, and Kite commercial integration
 
@@ -9,33 +13,51 @@
 
 1. [Executive Summary](#executive-summary)
 2. [Product Thesis, Goals, and Non-Goals](#product-thesis-goals-and-non-goals)
-3. [System Overview](#system-overview)
-4. [Core Architecture](#core-architecture)
-5. [Protocol and Data Model](#protocol-and-data-model)
-6. [Discovery Algorithms and Provable Claims](#discovery-algorithms-and-provable-claims)
-7. [Local Runtime, Transport, and Security](#local-runtime-transport-and-security)
-8. [Kite Product Integration](#kite-product-integration)
-9. [Self-Hostable Daemon](#self-hostable-daemon)
-10. [SDK Design](#sdk-design)
-11. [Phasing and Milestones](#phasing-and-milestones)
-12. [Risks and Open Research Questions](#risks-and-open-research-questions)
-13. [Benchmark and Validation Plan](#benchmark-and-validation-plan)
-14. [Appendix A — Repository Structure](#appendix-a--repository-structure)
-15. [Appendix B — Configuration Sketch](#appendix-b--configuration-sketch)
-16. [Appendix C — Mathematical Notes](#appendix-c--mathematical-notes)
-17. [Appendix D — References](#appendix-d--references)
+3. [Relationship to the Agent-Interop Landscape](#relationship-to-the-agent-interop-landscape)
+4. [System Overview](#system-overview)
+5. [Core Architecture](#core-architecture)
+6. [Protocol and Data Model](#protocol-and-data-model)
+7. [Discovery Algorithms and Provable Claims](#discovery-algorithms-and-provable-claims)
+8. [Local Runtime, Transport, and Security](#local-runtime-transport-and-security)
+9. [Kite Product Integration](#kite-product-integration)
+10. [Self-Hostable Daemon](#self-hostable-daemon)
+11. [SDK Design](#sdk-design)
+12. [Phasing and Milestones](#phasing-and-milestones) (incl. Phase 00 — Walking Skeleton)
+13. [Risks and Open Research Questions](#risks-and-open-research-questions)
+14. [Benchmark and Validation Plan](#benchmark-and-validation-plan)
+15. [Appendix A — Repository Structure](#appendix-a--repository-structure)
+16. [Appendix B — Configuration Sketch](#appendix-b--configuration-sketch)
+17. [Appendix C — Mathematical Notes](#appendix-c--mathematical-notes)
+18. [Appendix D — References](#appendix-d--references)
 
 ---
 
 ## Executive Summary
 
-Kite Agent Mesh is a decentralized, local-first protocol for agents to discover each other, negotiate work, and collaborate. The protocol targets **TCP/IP for agent collaboration**: a substrate simple enough to run peer-to-peer on a laptop, strong enough to support cross-organizational trust, and honest enough that its claims are grounded in components whose guarantees are already established.
+**Kite is the substrate layer for agent collaboration — the plumbing beneath MCP's tool access and A2A's federated handoff.** Where MCP connects an agent to its tools and A2A connects servers across administrative boundaries, Kite provides what neither specifies: local-first peer discovery, cryptographic identity, semantic capability matching, and explicit negotiation, for agents that run on laptops, homes, regional clusters, and air-gapped trust meshes as naturally as on the public internet.
 
-The design is built on a single load-bearing decision:
+The framing is **TCP/IP for agent collaboration**: a protocol simple enough to run peer-to-peer on a laptop, strong enough to support cross-organizational trust, boring enough that other protocols layer on top without asking permission. MCP and A2A are applications that can run over Kite; Kite is not an application that competes with them.
 
-**Kademlia handles exact key-based routing. Semantic discovery is a directory problem, not a routing-metric problem.**
+```text
+┌─────────────────────────────────────────────────────────────┐
+│     Agent frameworks (LangChain, CrewAI, ADK, OpenAI SDK)   │
+├─────────────────────────────────────────────────────────────┤
+│  Application protocols:  MCP  │  A2A  │  AGNTCY  │  ANP     │
+├─────────────────────────────────────────────────────────────┤
+│  KITE MESH — discovery · identity · negotiation · trust     │
+│  (facet-first cards · angular LSH · FIPA ACL · local tiers) │
+├─────────────────────────────────────────────────────────────┤
+│     libp2p substrate — Kademlia · GossipSub · Noise · QUIC  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-From that, five concrete commitments follow:
+The design rests on two load-bearing decisions:
+
+**(1) Layering.** Kite is a substrate, not an application. Its job is to get two opaque agents talking to each other across trust boundaries. What they say to each other — MCP, A2A, custom ACL payloads — is not Kite's problem. This keeps the mesh thin, versionable, and neutral across the application protocols that already exist.
+
+**(2) Metric discipline.** Kademlia handles exact key-based routing. Semantic discovery is a directory problem, not a routing-metric problem. Raw-embedding greedy routing is mathematically unsound in high dimensions [10][11]; Kite refuses to claim what cannot be proved.
+
+From these two decisions, five concrete commitments follow:
 
 1. **Facet-first capability modeling.** Every capability is split into *exact facets* (tools, ontologies, resource class, pricing band, trust tier, region, status) and a *soft semantic description*. Exact requirements are not approximated by embeddings when they can be encoded structurally.
 
@@ -57,7 +79,13 @@ This gives Kite a product that is decentralized, local-first, commercially expan
 
 ### Thesis
 
-The mesh should feel like **TCP/IP for agent collaboration**, built from components that each stay inside their valid mathematical regime.
+Kite is **TCP/IP for agent collaboration**: a substrate for agent-to-agent peer discovery, identity, and negotiation, beneath the application protocols (MCP, A2A, AGNTCY) that specify what agents *say* once they find each other. The substrate is built from components that each stay inside their valid mathematical regime.
+
+Three properties define the substrate posture:
+
+- **Neutrality.** The mesh does not pick winners among application protocols. A Kite capability card can advertise MCP servers, an A2A Agent Card URL, or neither. Bridges are first-class, not afterthoughts.
+- **Local-first addressability.** An agent on a laptop with no public IP is a first-class mesh participant. The public swarm is a deployment mode, not a prerequisite.
+- **Thin and versionable.** The protocol specifies discovery, identity, and negotiation envelopes. It does not specify task semantics, payment semantics, or tool semantics — those are application concerns.
 
 ### Primary goals
 
@@ -75,6 +103,53 @@ The mesh should feel like **TCP/IP for agent collaboration**, built from compone
 4. One universal similarity threshold across all domains.
 5. Large capability cards stored directly as heavy DHT values.
 6. A public swarm as the critical path for early product value.
+
+---
+
+## Relationship to the Agent-Interop Landscape
+
+The 2025–26 landscape produced several agent-interop protocols with overlapping scope. Kite is designed to **coexist with and compose across** them, not to replace any of them. Positioning matters because the landscape is crowded and the wrong framing wastes reviewer attention.
+
+### MCP — vertical agent↔tool protocol
+
+Anthropic's Model Context Protocol — governed by the Linux Foundation's Agentic AI Foundation (AAIF) since December 2025, adopted by OpenAI, Google, Microsoft, and AWS — standardizes the **vertical** axis: how a single agent (or host) reaches its tools, resources, and prompts through a host↔client↔server topology over stdio or Streamable HTTP [29]. MCP has no primitive for peer discovery, no decentralized trust model beyond OAuth to a known server, and an official-registry-as-root-of-trust assumption that Kite explicitly rejects in favor of libp2p Kademlia, angular LSH, and local-first tiering.
+
+Kite operates on the orthogonal **horizontal** axis — how opaque peer agents discover each other, match capabilities semantically, and negotiate handoffs without a central registry or shared host. Google's A2A team captures the framing cleanly: *"A2A focuses on agents partnering on tasks, whereas MCP focuses on agents using capabilities"* [33]. The two protocols compose: a Kite capability card may advertise an `mcp_servers` facet, so peers discovered through the mesh can still be consumed as MCP endpoints by any MCP-aware host. Prior art for this pattern exists in SEP-2127 (MCP Server Cards) [32] and in AGNTCY's OASF extensions [31], which embed MCP server descriptors as first-class directory facets.
+
+### A2A — federated agent↔agent protocol
+
+Google's Agent2Agent protocol (launched April 2025, donated to the Linux Foundation June 2025, absorbed IBM's ACP August 2025) standardizes **federated** agent-to-agent collaboration: each agent publishes a JSON Agent Card at `/.well-known/agent-card.json`, speaks JSON-RPC 2.0 over HTTPS with SSE streaming, and exposes a Task lifecycle (`submitted → working → input-required → completed/failed/canceled/rejected`) to partners who can reach its public endpoint [30]. A2A assumes every participating agent is a reachable HTTPS endpoint owned by an identifiable enterprise. This works well at the federation boundary between administrative domains. It does not work when agents run inside homes, laptops, regional clusters, or air-gapped trust meshes — the local-first case that motivates Kite.
+
+Kite operates one layer below A2A's assumptions. The libp2p Kademlia DHT gives O(log n) exact-key routing without DNS or well-known URLs; angular LSH over canonical embeddings gives semantic candidate generation without a central index; GossipSub gives push-style capability announcements; Noise + Ed25519 gives peer identity without a CA. The three-tier model (mDNS subnet → PSK trust mesh → public swarm) admits deployments where A2A's HTTPS-endpoint assumption is infeasible. The FIPA ACL performatives (REQUEST, PROPOSE, AGREE, REFUSE, INFORM, FAILURE, CANCEL, SUBSCRIBE) formalize the negotiation vocabulary that A2A's task lifecycle only implies — a principled revival, not legacy baggage: no other 2025–26 protocol cites FIPA directly, leaving a defensible differentiator for a spec that wants explicit speech-act semantics.
+
+### AGNTCY — the closest published cousin
+
+Cisco's AGNTCY Agent Directory Service (IETF `draft-mp-agntcy-ads`, arXiv 2509.18787) [31] is architecturally the closest published system to Kite. Its OASF record extensions include MCP-server and A2A-handshake metadata as first-class facets, and the directory is built on a **Kademlia-based DHT with a two-level capability → content mapping** — a direct validation of Kite's core architectural choice. Kite and AGNTCY ADS share the Kademlia-backed capability index; they differ in four meaningful ways:
+
+1. **Local-first tiering** (mDNS subnet / PSK trust mesh / public swarm). AGNTCY assumes global addressability from the outset.
+2. **Angular LSH on the data plane**, not just a directory index. Kite's semantic candidate generation uses LSH collisions with a closed-form recall bound; AGNTCY uses exact capability keys only.
+3. **FIPA ACL performatives as a first-class negotiation layer.** AGNTCY has no native negotiation primitives.
+4. **Single composable libp2p substrate for discovery and messaging.** AGNTCY layers gRPC/SLIM messaging on top of a separate DHT directory.
+
+### Landscape summary
+
+| Protocol | Primary layer | Topology | Transport | Peer discovery | Identity | Negotiation primitive |
+|---|---|---|---|---|---|---|
+| MCP [29] | Agent ↔ tools | Host–client–server (star) | stdio / Streamable HTTP | None (registry lookup) | OAuth | None |
+| A2A [30] | Agent ↔ agent | Federated HTTPS | JSON-RPC 2.0 / gRPC / REST | `.well-known/agent-card.json` | OpenAPI auth | Task lifecycle (implicit) |
+| ANP | Agent ↔ agent | Decentralized | HTTP + JSON-LD | DID + RFC 8615 | W3C DIDs + VCs | Meta-protocol negotiation |
+| AGNTCY ADS [31] | Directory | Kademlia DHT (control) + SLIM (data) | gRPC + MLS | DHT capability index | DIDs + Agent Badges | None native |
+| **Kite** | Agent ↔ agent discovery + negotiation | libp2p P2P, three-tier local-first | libp2p (TCP/QUIC) + Noise | Kademlia DHT + LSH + GossipSub | Ed25519 peer ID | FIPA ACL performatives |
+
+### Composition strategy
+
+Kite does not aim to displace A2A's server-to-server federation, MCP's tool-access protocol, or AGNTCY's identity/badge infrastructure. It aims to fill the local-first, peer-discoverable, mathematically-grounded layer that none of the other protocols currently occupies. Three composition patterns are explicit in the design:
+
+- **Kite ↔ MCP.** Kite capability cards carry an optional `mcp_servers` facet. Peers discovered over Kite can be consumed as MCP endpoints by any MCP-aware host.
+- **Kite ↔ A2A.** A Kite capability card is a strict superset of the A2A Agent Card's discovery surface. A lightweight gateway (Phase 4) exposes any Kite peer as an A2A-reachable agent and any A2A agent as a discoverable Kite peer, translating capability card → Agent Card, GossipSub events → SSE streams, and ACL performatives → task lifecycle states.
+- **Kite ↔ AGNTCY.** Kite directory records and OASF records can be bridged bidirectionally at the facet level, since both index capabilities over a Kademlia DHT.
+
+Independent critiques that reinforce the layering argument — Simon Willison's "lethal trifecta" for multi-server MCP, the Trust Fabric survey's observation that *"[MCP, A2A, ACP] primarily target execution orchestration and fail to adequately address the deeper infrastructural needs of agent discovery, semantic identity, and dynamic trust management at scale"* [34], and Anthropic's own Jan 2026 "MCP Tool Search" admission that MCP's flat tool namespace does not scale past a single agent — all point to an under-served horizontal discovery layer. Kite targets exactly that layer.
 
 ---
 
@@ -322,16 +397,31 @@ message CapabilityCard {
   bytes facet_fingerprint = 14;
   repeated TrustSignature endorsements = 15;
 
+  // Interop facets — optional bridges to neighboring protocols.
+  // These are advertised for composition, not required for Kite-native discovery.
+  repeated McpServerDescriptor mcp_servers = 17;
+  string a2a_agent_card_url = 18;
+
   bytes signature = 16;
+}
+
+message McpServerDescriptor {
+  string name = 1;
+  string transport = 2;        // "stdio" | "streamable_http"
+  string endpoint = 3;         // URL for streamable_http, local command for stdio
+  repeated string tools = 4;   // advertised tool names for candidate filtering
+  repeated string resources = 5;
+  string auth_scheme = 6;      // e.g. "oauth2", "none"
 }
 ```
 
 Notes:
 
 - `embedding.vector` is not the main network routing object
-- `facet_fingerprint` must be reproducible from the exact facets
+- `facet_fingerprint` must be reproducible from the exact facets and **does not include** the interop facets (mcp_servers, a2a_agent_card_url) so bridges can evolve without re-keying DHT records
 - Cards are signed and TTL-bounded
 - Endorsements are optional and policy-driven
+- Interop facets are optional: a card without MCP or A2A metadata is still a valid Kite capability. The fields exist so Kite peers can also be consumed by MCP hosts (SEP-2127 pattern [32]) or A2A clients without a separate advertisement surface
 
 ### Intent and advert split
 
@@ -573,6 +663,53 @@ Developers can enable `explain_match=true` to see: exact filters passed / failed
 
 ## Phasing and Milestones
 
+### Phase 00 — Walking Skeleton
+
+Before any benchmark harness, parameter sweep, or calibration corpus exists, the protocol has to prove its wires connect. The Walking Skeleton (in Cockburn's sense) is the thinnest end-to-end slice that exercises every load-bearing architectural choice in one continuous flow — not to prove discovery works well, but to prove the architecture is buildable, testable, and deployable.
+
+**What it proves.** Two Rust agents on the same laptop start fresh, mint Ed25519 identities, discover each other over mDNS, Noise-handshake, publish and retrieve a signed capability through the canonical-encoder → facet-fingerprint → LSH-directory pipeline, open an ACL conversation (REQUEST → PROPOSE → AGREE → INFORM), and close it with a signed Receipt. Every subsequent phase builds on boxes the skeleton has already wired together.
+
+**Scope — in.**
+
+1. **Identity.** Ed25519 keypair generated and persisted on first boot.
+2. **Transport.** libp2p (TCP), Noise XX handshake, direct peer-to-peer dials.
+3. **Discovery Tier 1 only.** mDNS peer discovery on the local subnet; no PSK, no bootstrap nodes, no relay.
+4. **Canonical encoder.** MiniLM-L6-v2 INT8 loaded via ONNX Runtime; L2-normalized 384-dim output.
+5. **One capability card.** Single `CapabilityCard` with real facets (`tools`, `ontologies`, `sandbox_level`, `region`, `status`), real facet fingerprint, one embedding, `L = 4` LSH tables with `k = 8` bits per table. Signed and TTL-bounded.
+6. **Directory publication.** libp2p Kademlia in single-swarm mode (two peers is enough). For each LSH table, publish one `DirectoryRecord` under the exact key `Hash(proto_ver || F || model_id || i || h_i(v))`. No GossipSub in the skeleton — pull path only.
+7. **Query flow.** Intent is built in-process: exact facets + description → canonical embedding → `L` LSH codes → `L` Kademlia lookups → union candidate set → fetch card → verify signature → facet filter → exact cosine rerank (flat scan over the single candidate) → top match.
+8. **ACL negotiation.** Conversation-scoped ACL envelopes carrying `REQUEST` → `PROPOSE` → `AGREE` → `INFORM` with a trivial payload (echo string). Every message signed; `in_reply_to` and `conversation_id` populated correctly.
+9. **Receipt.** One signed `Receipt` written to each agent's local SQLite store on success.
+10. **Integration test.** Single `cargo test --test walking_skeleton` spins up both daemons in-process, runs the full flow, and asserts the receipt row exists on both sides.
+11. **CI.** GitHub Actions pipeline that (a) builds both binaries, (b) runs the integration test, (c) publishes a container image tagged with the commit SHA. CI green is the skeleton's heartbeat.
+12. **Observability.** One Prometheus endpoint per daemon exposing `kite_mesh_directory_records_total`, `kite_mesh_directory_lookup_seconds`, `kite_mesh_match_accept_total`, `kite_mesh_receipts_total`. The integration test asserts each counter advanced.
+
+**Scope — out.**
+
+- GossipSub, hash-prefix topics, push path (Phase 1).
+- Multiple capabilities, real rerank competition, threshold calibration (Phase 0 / Phase 1).
+- HNSW local index (Phase 1; flat scan over one card is trivially correct here).
+- PSK trust mesh, Tier 2, relay, NAT traversal (Phase 2).
+- Public bootstrap, reputation, payments (Phase 3).
+- A2A / MCP / AGNTCY bridges (Phase 4).
+- Dashboard, CLI beyond `kite mesh start`, SDK ergonomics beyond what the integration test needs.
+- Real benchmark corpus — one hand-crafted `(intent, capability)` pair is enough to close the loop.
+
+**Definition of done.**
+
+1. `cargo test --test walking_skeleton` passes locally and in CI on a clean clone.
+2. The test completes in under 10 s end-to-end (encoder warm-start dominates; the discovery + ACL loop should be sub-100 ms after warm-up).
+3. Both agents' receipt stores contain the matching conversation's `Receipt`, signatures verify against the peers' Ed25519 public keys.
+4. Prometheus counters on both daemons show non-zero values for each of the four metrics listed above.
+5. The published container image boots to steady state with `RUST_LOG=info` and no `ERROR` lines.
+6. A single markdown runbook (`docs/walking_skeleton.md`) describes how to run the skeleton locally in under three commands.
+
+**Why this is the right skeleton.** Every load-bearing decision in the Executive Summary is exercised: facet-first capability modeling (#1), angular LSH directory over exact DHT keys (#2), local rerank after candidate retrieval (#4), one canonical encoder per epoch (#5). The one deferred commitment — hash-prefix GossipSub topics (#3) — is replaced with the pull path, which is cheaper to implement and exercises the same DirectoryRecord schema. If the skeleton passes, the architecture is proven buildable; if it fails, the failure surfaces in a 2–3 week window rather than halfway through Phase 1.
+
+**Deliberate non-claims.** The skeleton does not validate discovery quality, does not calibrate thresholds, does not measure recall, does not exercise NAT traversal, does not prove anything about multi-peer routing at scale. It proves the pipe is plumbed end to end. Phase 0 is where the quality work begins.
+
+---
+
 ### Phase 0 — Evaluation harness and calibration groundwork
 
 Build the benchmark and labeling pipeline before locking discovery defaults.
@@ -609,7 +746,15 @@ Open the public discovery layer without compromising operational sanity.
 
 ### Phase 4 — Ecosystem and bridges
 
-Language bindings; HTTP / A2A / MCP bridge layers; hosted bootstrap and relay program; community reference agents; research-track feature flags.
+Language bindings; hosted bootstrap and relay program; community reference agents; research-track feature flags.
+
+**Explicit interop bridges:**
+
+- **Kite ↔ A2A gateway.** A standalone service that (a) publishes any Kite peer as an A2A agent by translating its capability card into an Agent Card at `/.well-known/agent-card.json` and mapping ACL performatives onto the Task lifecycle; and (b) represents any reachable A2A agent as a Kite capability card, allowing A2A agents to be discovered through mesh push/pull paths. Uses the interop facets on CapabilityCard (§5) as the translation schema.
+- **Kite ↔ MCP bridge.** A thin MCP server that exposes a Kite peer's `mcp_servers` facet contents as proxied MCP tools, so MCP hosts (Claude Desktop, Cursor, VS Code) can consume mesh-discovered agents as ordinary MCP endpoints. Inverse direction: a Kite publisher that announces a local MCP server as a capability card.
+- **Kite ↔ AGNTCY facet translator.** Bidirectional mapping between Kite directory records and OASF records so the Cisco AGNTCY directory and a Kite mesh can share capability publications.
+
+**Definition of done:** round-trip interop demonstrated for A2A, MCP, and AGNTCY; the same agent can be discovered and invoked from each peer's native client without Kite-specific knowledge on either side.
 
 ---
 
@@ -636,13 +781,15 @@ Language bindings; HTTP / A2A / MCP bridge layers; hosted bootstrap and relay pr
 
 ### Prior work
 
-No published peer-reviewed system combines HNSW, GossipSub, Kademlia, and semantic embeddings into a unified agent-discovery mesh. The closest published work each addresses a fragment:
+No published peer-reviewed system combines HNSW, GossipSub, Kademlia, angular LSH, and semantic embeddings with a local-first tier model and FIPA ACL performatives into a unified agent-discovery mesh. The closest published works each address a fragment:
 
-- **Semantica** (arXiv, February 2025) uses LLM embeddings for decentralized search via a tree-structured overlay, demonstrating that "accuracy and speed losses due to decentralization can be mitigated using semantics" [8]. It uses neither HNSW nor GossipSub.
+- **Cisco AGNTCY Agent Directory Service** (IETF `draft-mp-agntcy-ads`, arXiv 2509.18787) [31] is the closest architectural cousin. It uses a **Kademlia-based DHT with a two-level capability → content mapping** and an OASF record format that embeds MCP-server and A2A-handshake descriptors as first-class facets. Kite differs in local-first tiering, angular-LSH semantic matching on the data plane (not just a directory index), FIPA ACL performatives as a negotiation layer, and a single libp2p substrate for discovery + messaging (AGNTCY layers gRPC/SLIM on a separate DHT).
+- **Semantica** (arXiv, February 2025) uses LLM embeddings for decentralized search via a tree-structured overlay, demonstrating that "accuracy and speed losses due to decentralization can be mitigated using semantics" [8]. It uses neither HNSW, GossipSub, nor explicit negotiation semantics.
 - **Semantic Overlay Networks** literature (2002–2010) combines P2P topology with semantic routing using ontology-based rather than neural-embedding semantics.
 - **pSearch** distributed LSI vectors through a Content-Addressable Network DHT, searching only 19 of 128,000 nodes to achieve 91.7% intersection with centralized results — but predates modern neural embeddings by two decades [28].
+- **MCP Server Cards (SEP-2127)** [32] propose an HTTP discovery mechanism at `.well-known/mcp/server-card.json` paired with A2A's `.well-known/agent-card.json` under a unified "AI Card" initiative — motivating Kite's decision to carry MCP descriptors as card facets.
 
-Kite Mesh's contribution is a composition that stays inside each component's proven regime rather than extending any component's proof story.
+Kite Mesh's contribution is a composition that stays inside each component's proven regime while filling a gap — local-first, peer-discoverable, mathematically-grounded agent-to-agent discovery and negotiation — that neither A2A, MCP, ACP, ANP, AGNTCY, NANDA, nor Coral currently occupies.
 
 ### Research track A — Projected Cover Overlay
 
@@ -903,7 +1050,7 @@ Johnson-Lindenstrauss gives a standard path for reducing dimension while approxi
 
 - **[8]** Paul Neague et al. *Semantica: Decentralized Search using an LLM-Guided Semantic Tree Network.* arXiv:2502.10151, February 2025. <https://arxiv.org/pdf/2502.10151>
 
-- **[9]** Xing Shi Cai and Luc Devroye. *A Probabilistic Analysis of Kademlia Networks.* Internet Mathematics, 2015.
+- **[9]** Xing Shi Cai and Luc Devroye. *A Probabilistic Analysis of Kademlia Networks.* Algorithms and Computation — ISAAC 2013, LNCS 8283, pp. 711–721, Springer, 2013. <https://doi.org/10.1007/978-3-642-45030-3_66> (arXiv preprint: <https://arxiv.org/abs/1309.5866>). Journal extension: *The Analysis of Kademlia for Random IDs,* Internet Mathematics 11(6):572–587, 2015. <https://doi.org/10.1080/15427951.2015.1051674>
 
 - **[10]** Jon Kleinberg. *The Small-World Phenomenon: An Algorithmic Perspective.* STOC 2000.
 
@@ -923,11 +1070,11 @@ Johnson-Lindenstrauss gives a standard path for reducing dimension while approxi
 
 - **[18]** Benjamin Lipp, Bruno Blanchet, and Karthikeyan Bhargavan. *A Mechanised Cryptographic Proof of the WireGuard Virtual Private Network Protocol* / Noise* formal verification work. IEEE S&P 2019.
 
-- **[19]** Guillaume Girol. *Formalisations of the Noise Protocol Framework in the Tamarin Prover.* ETH Zurich.
+- **[19]** Guillaume Girol. *Formalizing and Verifying the Security Protocols from the Noise Framework.* Master's thesis, ETH Zürich, 2019. <https://ethz.ch/content/dam/ethz/special-interest/infk/inst-infsec/information-security-group-dam/research/software/ma-19-girol-noise.pdf>
 
 - **[20]** Benjamin Dowling, Paul Rösler, and Jörg Schwenk. *Flexible Authenticated and Confidential Channel Establishment (fACCE).* PKC 2020.
 
-- **[21]** Dennis Trautwein et al. *libp2p Hole Punching Measurement Study.* 2025. Measured 4.4 million attempts across 85,000 networks in 167 countries.
+- **[21]** Dennis Trautwein, Cornelius Ihle, Moritz Schubotz, and Bela Gipp. *Challenging Tribal Knowledge — Large Scale Measurement Campaign on Decentralized NAT Traversal.* arXiv preprint arXiv:2510.27500, October 2025. <https://arxiv.org/abs/2510.27500>. Measured 4.4 million traversal attempts across 85,000 networks in 167 countries; DCUtR success rate 70% ± 7.1%, 97.6% of successful connections land on the first attempt.
 
 - **[22]** Weaviate. *Vector index types: HNSW and flat.* <https://weaviate.io/developers/weaviate/concepts/vector-index>
 
@@ -942,3 +1089,15 @@ Johnson-Lindenstrauss gives a standard path for reducing dimension while approxi
 - **[27]** Daniel J. Bernstein, Niels Duif, Tanja Lange, Peter Schwabe, and Bo-Yin Yang. *High-speed high-security signatures.* Journal of Cryptographic Engineering, 2012. <https://ed25519.cr.yp.to/ed25519-20110926.pdf>
 
 - **[28]** Chunqiang Tang, Zhichen Xu, and Sandhya Dwarkadas. *Peer-to-peer information retrieval using self-organizing semantic overlay networks.* SIGCOMM 2003. <https://dl.acm.org/doi/10.1145/863955.863976>
+
+- **[29]** Model Context Protocol specification and governance. Linux Foundation Agentic AI Foundation (AAIF), December 2025. <https://modelcontextprotocol.io> (official registry preview: <https://registry.modelcontextprotocol.io>)
+
+- **[30]** Agent2Agent (A2A) Protocol specification. Linux Foundation Agent2Agent Project (donated by Google June 2025; absorbed IBM ACP August 2025). <https://github.com/a2aproject/A2A>
+
+- **[31]** Cisco AGNTCY Agent Directory Service. *Agent Directory Service (ADS): A Decentralized Directory for Agentic Systems.* IETF Internet-Draft `draft-mp-agntcy-ads`; arXiv:2509.18787. <https://arxiv.org/abs/2509.18787>
+
+- **[32]** MCP Server Cards. Model Context Protocol Specification Enhancement Proposal SEP-2127. <https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2127>
+
+- **[33]** Google A2A team. *A2A and MCP.* Official A2A documentation. <https://github.com/a2aproject/A2A/blob/main/docs/topics/a2a-and-mcp.md>
+
+- **[34]** *Agent Trust Fabric: A Survey of Identity, Discovery, and Trust Management for Agentic Systems.* arXiv:2507.07901, 2025. <https://arxiv.org/abs/2507.07901>
