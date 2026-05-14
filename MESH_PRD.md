@@ -5,7 +5,7 @@
 > *Last updated: 2026-04-23.*
 
 > **Status**: Draft
-> **Scope**: Open-source mesh protocol, self-hostable daemon, SDK, and Kite commercial integration
+> **Scope**: Open-source mesh protocol, local daemon, SDK, and Kite commercial integration
 
 ---
 
@@ -20,7 +20,7 @@
 7. [Discovery Algorithms and Provable Claims](#discovery-algorithms-and-provable-claims)
 8. [Local Runtime, Transport, and Security](#local-runtime-transport-and-security)
 9. [Kite Product Integration](#kite-product-integration)
-10. [Self-Hostable Daemon](#self-hostable-daemon)
+10. [Local Daemon](#local-daemon)
 11. [SDK Design](#sdk-design)
 12. [Phasing and Milestones](#phasing-and-milestones) (incl. Phase 00 — Walking Skeleton)
 13. [Risks and Open Research Questions](#risks-and-open-research-questions)
@@ -620,7 +620,7 @@ kite_mesh_receipts_total
 
 ---
 
-## Self-Hostable Daemon
+## Local Daemon
 
 A single Rust binary.
 
